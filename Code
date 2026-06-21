@@ -1,0 +1,129 @@
+from flask import Flask, request, render_template_string, send_file
+from transformers import pipeline
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+app = Flask(__name__)
+
+# Store results in memory
+results = []
+
+# Load Sentiment Model
+sentiment_pipeline = pipeline(
+    "sentiment-analysis",
+    model="cardiffnlp/twitter-roberta-base-sentiment-latest"
+)
+
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI-Based Sentiment Analyzer</title>
+    <style>
+        body{
+            font-family:Arial;
+            background:#f4f4f4;
+            padding:30px;
+            text-align:center;
+        }
+        textarea{
+            width:70%;
+            height:120px;
+            padding:10px;
+        }
+        button{
+            padding:10px 20px;
+            background:#007bff;
+            color:white;
+            border:none;
+            cursor:pointer;
+        }
+        .result{
+            margin-top:20px;
+            background:white;
+            padding:20px;
+            border-radius:10px;
+            display:inline-block;
+        }
+    </style>
+</head>
+<body>
+
+<h1>AI-Based Sentiment Analyzer</h1>
+
+<form method="POST">
+    <textarea name="review" placeholder="Enter review or social media text" required></textarea><br><br>
+    <button type="submit">Analyze</button>
+</form>
+
+{% if sentiment %}
+<div class="result">
+    <h2>Result</h2>
+    <p><b>Sentiment:</b> {{ sentiment }}</p>
+    <p><b>Confidence:</b> {{ score }}%</p>
+    <img src="/chart" width="500">
+</div>
+{% endif %}
+
+</body>
+</html>
+"""
+
+@app.route("/", methods=["GET", "POST"])
+def home():
+    sentiment = None
+    score = None
+
+    if request.method == "POST":
+        text = request.form["review"]
+
+        result = sentiment_pipeline(text)[0]
+
+        sentiment = result["label"]
+        score = round(result["score"] * 100, 2)
+
+        results.append({
+            "text": text,
+            "sentiment": sentiment,
+            "score": score
+        })
+
+    return render_template_string(
+        HTML,
+        sentiment=sentiment,
+        score=score
+    )
+
+@app.route("/chart")
+def chart():
+
+    positive = 0
+    negative = 0
+    neutral = 0
+
+    for item in results:
+        label = item["sentiment"].lower()
+
+        if "positive" in label:
+            positive += 1
+        elif "negative" in label:
+            negative += 1
+        else:
+            neutral += 1
+
+    plt.figure(figsize=(6,4))
+    plt.bar(
+        ["Positive", "Negative", "Neutral"],
+        [positive, negative, neutral]
+    )
+    plt.title("Sentiment Analysis Report")
+
+    chart_file = "sentiment_chart.png"
+    plt.savefig(chart_file)
+    plt.close()
+
+    return send_file(chart_file, mimetype='image/png')
+
+if __name__ == "__main__":
+    app.run(debug=True)
